@@ -10,8 +10,13 @@
     "test": "jest"
   },
   "dependencies": {
+    "axios": "^1.9.0",
     "react": "19.0.0",
-    "react-native": "0.79.3"
+    "react-native": "0.79.3",
+    "react-native-audio-recorder-player": "^3.6.12",
+    "react-native-fs": "^2.20.0",
+    "react-native-permissions": "^5.4.1",
+    "rn-fetch-blob": "^0.12.0"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",

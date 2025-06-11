@@ -1,131 +1,145 @@
-/**
- * Sample React Native App
- * https://github.com/facebook/react-native
- *
- * @format
- */
+import React, { useState } from 'react';
+import { View, Text, StyleSheet, Button, ActivityIndicator, Alert, TouchableOpacity } from 'react-native';
+import Recorder from './components/Recorder';
+import TranscribedText from './components/TranscribedText';
+import RNFetchBlob from 'rn-fetch-blob';
 
-import React from 'react';
-import type {PropsWithChildren} from 'react';
-import {
-  ScrollView,
-  StatusBar,
-  StyleSheet,
-  Text,
-  useColorScheme,
-  View,
-} from 'react-native';
+export default function App() {
+  const [audioPath, setAudioPath] = useState(null);
+  const [transcribedText, setTranscribedText] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [selectedLanguage, setSelectedLanguage] = useState('ru'); // 'pl' or 'en'
 
-import {
-  Colors,
-  DebugInstructions,
-  Header,
-  LearnMoreLinks,
-  ReloadInstructions,
-} from 'react-native/Libraries/NewAppScreen';
-
-type SectionProps = PropsWithChildren<{
-  title: string;
-}>;
-
-function Section({children, title}: SectionProps): React.JSX.Element {
-  const isDarkMode = useColorScheme() === 'dark';
-  return (
-    <View style={styles.sectionContainer}>
-      <Text
-        style={[
-          styles.sectionTitle,
-          {
-            color: isDarkMode ? Colors.white : Colors.black,
-          },
-        ]}>
-        {title}
-      </Text>
-      <Text
-        style={[
-          styles.sectionDescription,
-          {
-            color: isDarkMode ? Colors.light : Colors.dark,
-          },
-        ]}>
-        {children}
-      </Text>
-    </View>
-  );
-}
-
-function App(): React.JSX.Element {
-  const isDarkMode = useColorScheme() === 'dark';
-
-  const backgroundStyle = {
-    backgroundColor: isDarkMode ? Colors.darker : Colors.lighter,
+  const handleRecordingFinished = (path) => {
+    console.log('[handleRecordingFinished] Audio recording finished. Path:', path);
+    setAudioPath(path);
+    transcribeAudio(path);
   };
 
-  /*
-   * To keep the template simple and small we're adding padding to prevent view
-   * from rendering under the System UI.
-   * For bigger apps the recommendation is to use `react-native-safe-area-context`:
-   * https://github.com/AppAndFlow/react-native-safe-area-context
-   *
-   * You can read more about it here:
-   * https://github.com/react-native-community/discussions-and-proposals/discussions/827
-   */
-  const safePadding = '5%';
+  const transcribeAudio = async (path) => {
+    console.log('[transcribeAudio] Using RNFetchBlob to upload:', path);
+    setLoading(true);
+
+    try {
+      const response = await RNFetchBlob.fetch('POST', 'http://192.168.0.80:5000/transcribe', {
+        'Content-Type': 'multipart/form-data',
+      }, [
+        {
+          name: 'file',
+          filename: 'audio.m4a',
+          type: 'audio/m4a',
+          data: RNFetchBlob.wrap(path),
+        },
+        {
+          name: 'language',
+          data: selectedLanguage,
+        }
+      ]);
+
+      const data = JSON.parse(response.data);
+      console.log('[transcribeAudio] Response:', data);
+      setTranscribedText(data.text || '[пусто]');
+    } catch (err) {
+      console.error('[transcribeAudio] Error:', err.message, err);
+      Alert.alert('Ошибка', 'Не удалось отправить аудио: ' + err.message);
+    }
+
+    setLoading(false);
+  };
+
+  const saveTranscription = async () => {
+    console.log('[saveTranscription] Sending transcription to /save');
+    try {
+      const response = await fetch('http://192.168.0.80:5000/save', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          file_name: 'audio.m4a',
+          text: transcribedText,
+          language: selectedLanguage,
+        }),
+      });
+
+      const result = await response.json();
+      if (response.ok) {
+        console.log('[saveTranscription] Response:', result);
+        Alert.alert('Успех', 'Текст успешно сохранён');
+      } else {
+        throw new Error(result.error || 'Ошибка при сохранении');
+      }
+    } catch (err) {
+      console.error('[saveTranscription] Error:', err.message);
+      Alert.alert('Ошибка', 'Не удалось сохранить: ' + err.message);
+    }
+  };
+
+  const renderLanguageButton = (lang, label) => (
+    <TouchableOpacity
+      onPress={() => setSelectedLanguage(lang)}
+      style={[
+        styles.languageButton,
+        selectedLanguage === lang && styles.languageButtonSelected
+      ]}
+    >
+      <Text style={[
+        styles.languageText,
+        selectedLanguage === lang && styles.languageTextSelected
+      ]}>
+        {label}
+      </Text>
+    </TouchableOpacity>
+  );
 
   return (
-    <View style={backgroundStyle}>
-      <StatusBar
-        barStyle={isDarkMode ? 'light-content' : 'dark-content'}
-        backgroundColor={backgroundStyle.backgroundColor}
-      />
-      <ScrollView
-        style={backgroundStyle}>
-        <View style={{paddingRight: safePadding}}>
-          <Header/>
-        </View>
-        <View
-          style={{
-            backgroundColor: isDarkMode ? Colors.black : Colors.white,
-            paddingHorizontal: safePadding,
-            paddingBottom: safePadding,
-          }}>
-          <Section title="Step One">
-            Edit <Text style={styles.highlight}>App.tsx</Text> to change this
-            screen and then come back to see your edits.
-          </Section>
-          <Section title="See Your Changes">
-            <ReloadInstructions />
-          </Section>
-          <Section title="Debug">
-            <DebugInstructions />
-          </Section>
-          <Section title="Learn More">
-            Read the docs to discover what to do next:
-          </Section>
-          <LearnMoreLinks />
-        </View>
-      </ScrollView>
+    <View style={styles.container}>
+      <View style={styles.languageSelector}>
+        {renderLanguageButton('pl', 'PL')}
+        {renderLanguageButton('en', 'EN')}
+      </View>
+
+      <Recorder onFinish={handleRecordingFinished} />
+
+      {loading && <ActivityIndicator size="large" />}
+
+      <TranscribedText text={transcribedText} />
+
+      {transcribedText ? (
+        <Button title="Отправить текст" onPress={saveTranscription} />
+      ) : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  sectionContainer: {
-    marginTop: 32,
-    paddingHorizontal: 24,
+  container: {
+    flex: 1,
+    justifyContent: 'center',
+    padding: 20,
   },
-  sectionTitle: {
-    fontSize: 24,
-    fontWeight: '600',
+  languageSelector: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginBottom: 20,
   },
-  sectionDescription: {
-    marginTop: 8,
-    fontSize: 18,
-    fontWeight: '400',
+  languageButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    marginHorizontal: 8,
+    borderRadius: 8,
+    backgroundColor: '#ccc',
   },
-  highlight: {
-    fontWeight: '700',
+  languageButtonSelected: {
+    backgroundColor: '#007bff',
+    transform: [{ scale: 1.1 }],
+  },
+  languageText: {
+    fontSize: 16,
+    color: '#000',
+  },
+  languageTextSelected: {
+    color: '#fff',
+    fontWeight: 'bold',
   },
 });
-
-export default App;
